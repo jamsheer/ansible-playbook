@@ -24,7 +24,6 @@
       - virtualbox
 
   roles:
-    - global-prefs
     - { role: homebrew, apps: "{{ homebrew_apps }}" }
     - { role: homebrew_cask, apps: "{{ cask_apps }}" }
     - { role: vagrant, vagrant_user: "{{ username }}", tags: [vagrant] }
