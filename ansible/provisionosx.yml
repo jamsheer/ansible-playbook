@@ -23,21 +23,15 @@
       - vagrant
       - virtualbox
 
-  roles:
-    - { role: homebrew, apps: "{{ homebrew_apps }}" }
-    - { role: homebrew_cask, apps: "{{ cask_apps }}" }
-    - { role: vagrant, vagrant_user: "{{ username }}", tags: [vagrant] }
-    - git
 
   tasks:
-    - name: Install Python 2
+    - name: Install Python 2.7.10
       shell: pyenv install 2.7.10
 
     - name: Install Virtualenv
       shell: pip install virtualenvwrapper
 
-    - name: install node packages
-      npm: install
+    - npm: path={{ install_root }}/{{ project_name }}
       notify:
       - restart gunicorn
 
