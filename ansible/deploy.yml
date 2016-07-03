@@ -1,53 +1,64 @@
 ---
-- hosts: servers
+- hosts: osx
   vars_files:
     - vars.yml
   gather_facts: false
-  become: yes
 
   tasks:
-    - name: Clone/pull project repo
-      git: repo={{ project_repo }} dest={{ install_root }}/{{ project_name }} accept_hostkey=yes
-      notify:
-      - restart gunicorn
+
+#    - name: Change to project directory
+#      shell: cd {{ project_directory }}
+#
+#    - name: Setting up virtualenv  1/3
+#      shell: export WORKON_HOME={{home_directory}}/.virtualenvs
+#
+#    - name: Setting up virtualenv 2/3
+#      shell: export PROJECT_HOME={{home_directory}}/{{ project_directory }}
+#
+#    - name: Setting up virtualenv 3/3
+#      shell: source {{home_directory}}/.pyenv/shims/virtualenvwrapper.sh
+#
+#    - name: VirtualEnv
+#      shell: mkproject yougotagift
+#      args:
+#        executable: /bin/bash
+#
+#    - name: Create directory for app
+#      file: path={{ project_directory }}/{{ project_name }} state=directory
+#
+#    - name: Cloneing {{ project_repo }} to  {{ install_root }}/{{ project_name }}
+#      shell: cd {{ project_directory }}/{{ project_name }}
+#
+#    - name: ssh-agent bash
+#      shell: ssh-agent bash
+
+#    - name: Cloneing {{ project_repo }} to  {{ install_root }}/{{ project_name }} key_file={{ install_root }}/.ssh/id_rsa.pub
+#      git: repo={{ project_repo }} dest={{ install_root }}/{{ project_name }} accept_hostkey="true" key_file="{{ install_root }}/.ssh/id_rsa" force="true"
+
+    - name: Setup SWIG
+      shell: env LDFLAGS="-L$(brew --prefix openssl)/lib" \ CFLAGS="-I$(brew --prefix openssl)/include" \ SWIG_FEATURES="-cpperraswarn -includeall -I$(brew --prefix openssl)/include" \ pip install m2crypto
 
     - name: install python packages
-      pip: requirements={{ install_root }}/{{ project_name }}/requirements.txt
-      notify:
-      - restart gunicorn
+      pip: requirements={{ project_directory }}/{{ project_name }}/requirements.txt
 
-    - name: copy nginx config
-      template: src=files/nginx.j2 dest=/etc/nginx/sites-enabled/{{ project_name }}.conf
-      notify:
-      - restart nginx
+    - name: Setup Node Packages
+      shell: npm install folder {{ project_directory }}/{{ project_name }}
 
-    - name: django bower install
-      django_manage: command=bower_install app_path={{ install_root }}/{{ project_name }} pythonpath={{ pythonpath }}
+#    - name: django bower install
+#      django_manage: command=bower_install app_path={{ project_directory }}/{{ project_name }}
 
-    - name: django migrate
-      django_manage: command=migrate app_path={{ install_root }}/{{ project_name }} pythonpath={{ pythonpath }}
+#    - name: django migrate
+#      django_manage: command=migrate app_path={{ project_directory }}/{{ project_name }}
 
-    - name: django collectstatic
-      django_manage: command=collectstatic app_path={{ install_root }}/{{ project_name }} pythonpath={{ pythonpath }}
+#    - name: django collectstatic
+#      django_manage: command=collectstatic app_path={{ project_directory }}/{{ project_name }}
+#
+#    - name: make sure mysql server is running
+#      service: name=mysql state=started enabled=yes
+#
+#    - name: make sure nginx server is running
+#      service: name=nginx state=started enabled=yes
+#
+#    - name: make sure gunicorn server is running
+#      service: name=gunicorn state=started enabled=yes
 
-    - name: copy gunicorn config
-      template: src=files/gunicorn.j2 dest=/etc/init/gunicorn.conf
-      notify:
-      - restart gunicorn
-
-    - name: make sure mysql server is running
-      service: name=mysql state=started enabled=yes
-
-    - name: make sure nginx server is running
-      service: name=nginx state=started enabled=yes
-
-    - name: make sure gunicorn server is running
-      service: name=gunicorn state=started enabled=yes
-
-  handlers: 
-    - name: restart nginx
-      service: name=nginx state=restarted
-
-    - name: restart gunicorn
-      service: name=gunicorn state=restarted
-# vim:ft=ansible:
