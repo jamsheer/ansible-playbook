@@ -2,10 +2,18 @@
 # playbook for creating new users
 # this only sets up the user, configuration is handled by another playbook.
 - hosts: osx
-  user: jamsheerkandoth
-  become: yes
-
   vars:
+    db_name: yougotagiftdb_dev
+    db_user: yougotagift
+    db_password: ygtdb2016
+    project_name: yougotagift
+    home_directory: "{{ lookup('env', 'HOME') }}"
+    project_directory: "{{ home_directory }}/Projects"
+    username: "{{ lookup('env','USER') }}"
+    ssh_private_key: "{{ home_directory }}/.ssh/id_rsa"
+    project_repo: git@github.com:YouGotaGift/yougotagift.git
+    static_root: "{{ home_directory }}/{{ project_name }}/yougotagift/app_static"
+    python_version: "2.7.10"
     homebrew_apps:
       - git
       - pyenv
@@ -19,40 +27,114 @@
       - node010
       - bash-completion
       - mysql
+      - openssl
+      - swig
     cask_apps:
       - vagrant
       - virtualbox
+  user: "{{username}}"
 
 
   tasks:
-    - name: Install Python 2.7.10
-      shell: pyenv install 2.7.10
+    - debug: msg="Starting tasks path  {{home_directory}} for  {{username}}"
 
-    - name: Install Virtualenv
-      shell: pip install virtualenvwrapper
+    - name: Load bashrc in bash_profile
+      lineinfile: dest={{home_directory}}/.bash_profile regexp="\. \$HOME\/\.bashrc" line="[[ -r $HOME/.bashrc ]] && . $HOME/.bashrc"
 
-    - npm: path={{ install_root }}/{{ project_name }}
-      notify:
-      - restart gunicorn
+    - name: Ensure presence of bashrc
+      file: state=touch path={{home_directory}}/.bashrc
+
+    - name: Add local bin to $PATH
+      lineinfile: dest={{home_directory}}/.bashrc regexp="^export PATH\=\$HOME\/local\/bin" line="export PATH=$HOME/local/bin:$PATH"
+
+    - name: Add brew to beginning of $PATH
+      lineinfile: dest={{home_directory}}/.bashrc regexp="^export PATH=\/usr\/local\/bin" line="export PATH=/usr/local/bin:$PATH"
+
+    - homebrew: name={{ item }} state=present
+      with_items: "{{ homebrew_apps }}"
+
+    - homebrew_cask: name={{ item }} state=present
+      with_items: "{{ cask_apps }}"
+
+    - stat: path={{home_directory}}/.pyenv/versions/{{ python_version }}
+      register: pyenv_version_dir
+
+    - name: Configure pyenv
+      shell: echo 'if which pyenv > /dev/null; then eval "$(pyenv init -)"; fi' >> ~/.bash_profile
+      args:
+        executable: /bin/bash
+
+    - name: Eval pyenv
+      shell: eval "$(pyenv init -)"
+      args:
+        executable: /bin/bash
+
+    - name: Install Python {{ python_version }}
+      shell: pyenv install {{ python_version }}
+      when: pyenv_version_dir.stat.exists == False
+      args:
+        executable: /bin/bash
+
+    - name: Setting up python pip 1/4
+      shell: printf 'if [ -f ~/.bashrc ]; then\n  source ~/.bashrc\nfi\n' >> {{home_directory}}/.bash_profile
+      args:
+        executable: /bin/bash
+
+    - name: Setting up python pip 2/4
+      shell: printf 'export PATH=$PATH:{{home_directory}}/.pyenv/shims\n' >> {{home_directory}}/.bashrc
+      when: pyenv_version_dir.stat.exists == False
+      args:
+        executable: /bin/bash
+
+    - name: Setting up python pip 3/4
+      shell: printf 'export PATH=$PATH:{{home_directory}}/.pyenv/versions/{{ python_version }}/\n' >> {{home_directory}}/.bashrc
+      when: pyenv_version_dir.stat.exists == False
+      args:
+        executable: /bin/bash
+
+    - name: Setting up python pip 4/4
+      shell: source {{home_directory}}/.bash_profile
+      args:
+        executable: /bin/bash
+
+    - name: rehash
+      shell: pyenv {{item}}
+      args:
+        executable: /bin/bash
+      with_items:
+        - rehash
+        - global 2.7.10
+
+    - name: Install virtualenv and virtualenvwrapper
+      pip: name={{item}} state=present
+      with_items:
+        - virtualenvwrapper
+        - MySQL-python
 
     - name: Save ssh key to server
-      copy: src={{ ssh_private_key }} dest=/root/.ssh/id_rsa mode=600
+      copy: src={{ ssh_private_key }} dest={{ home_directory }}/.ssh/id_rsa mode=600
 
-    - name: Create directory for app
-      file: path={{ install_root }}/{{ project_name }} state=directory
+    - name: Start services at login
+      file: src=/usr/local/opt/{{ item }}/homebrew.mxcl.{{ item }}.plist path=~/Library/LaunchAgents/homebrew.mxcl.{{ item }}.plist state=link force=yes
+      with_items:
+        - mysql
+        - elasticsearch
+        - redis
 
-    - name: make sure mysql server is running
-      service: name=mysql state=started
+    - name: Setup launch agents for services
+      command: launchctl load {{ home_directory }}/Library/LaunchAgents/homebrew.mxcl.{{ item }}.plist
+      with_items:
+        - mysql
+        - elasticsearch
+        - redis
 
     - name: create database
-      become_user: mysql
-      mysql_db: name={{ db_name }}
+      mysql_db: name={{ db_name }} login_user=root
 
     - name: create database user
-      become_user: mysql
-      mysql_user: db={{ db_name }} name={{ db_user }} password={{ db_password }} priv=ALL
+      mysql_user: login_user=root name={{ db_user }} password={{ db_password }} priv={{ db_name }}.*:ALL
 
     - name: remove default nginx site
       file: path=/etc/nginx/sites-enabled/default state=absent
 
-- include: deploy.yml
+#- include: deploy.yml
